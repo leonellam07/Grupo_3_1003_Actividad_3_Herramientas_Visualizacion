@@ -1,0 +1,233 @@
+const apiUrl = "https://media.githubusercontent.com/media/leonellam07/Grupo_3_1003_Actividad_3_Herramientas_Visualizacion/refs/heads/main/Walmart_Sales.csv";
+
+
+function csvToJson(csvText) {
+    const lines = csvText.trim().split("\n");
+    const headers = lines[0].split(",");
+
+    return lines.slice(1).map(line => {
+        const values = line.split(",");
+        return headers.reduce((obj, header, index) => {
+            obj[header.trim()] = values[index]?.trim();
+            return obj;
+        }, {});
+    });
+}
+
+
+async function cargarDatos() {
+    fetch(apiUrl)
+        .then(response => response.text())
+        .then(csv => {
+            let datos = csvToJson(csv);
+
+            // Mostrar tabla
+            const tabla = $('#tabla-sales tbody');
+            tabla.empty();
+
+            datos = datos.map(sale => {
+                const d = `${sale.Date}`;
+                const anio = `${d.slice(6)}`;
+                const mes = `${d.slice(3, 5)}`;
+                const dia = `${d.slice(0, 2)}`;
+
+                const formattedDate = `${anio}-${mes}-${dia}`;
+                return { ...sale, Date: formattedDate, Periodo: `${anio}-${mes}` };
+            });
+
+
+            datos.sort((a, b) => a.Date - b.Date);
+
+            datos.forEach(sale => {
+                const fila = `
+                            <tr>
+                            <td>${sale.Store}</td>
+                            <td>${sale.Date}</td>
+                            <td>${sale.Weekly_Sales?.toLocaleString() ?? 'N/A'}</td>
+                            <td>${sale.Temperature?.toLocaleString() ?? 'N/A'}</td>
+                            <td>${sale.Fuel_Price?.toLocaleString() ?? 'N/A'}</td>
+                            <td>${sale.CPI?.toLocaleString() ?? 'N/A'}</td>
+                            <td>${sale.Unemployment?.toLocaleString() ?? 'N/A'}</td>
+                            </tr>
+                        `;
+                tabla.append(fila);
+            });
+
+            // Inicializar DataTables
+            $('#tabla-sales').DataTable({
+                pageLength: 10,
+                language: {
+                    url: "https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json"
+                }
+            });
+
+
+
+            dibujarGraficoVentas(datos);
+
+        })
+        .catch(error => console.error('Error al cargar el CSV:', error));
+}
+
+
+function dibujarGraficoVentas(datos) {
+    const margin = { top: 20, right: 20, bottom: 30, left: 70 };
+    const width = 1600 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
+
+    const svg = d3.select("#grafico-ventas")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height)
+
+
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+
+    d3.csv(apiUrl).then(data => {
+
+        // Convertir strings a números y fechas
+        data.forEach(d => {
+            d.date = d3.timeParse("%d-%m-%Y")(d.Date);
+            d.sales = +d.Weekly_Sales;
+            d.store = `Tienda ${d.Store}`;
+        });
+
+        // Agrupar por tienda
+        const ventasPorTienda = d3.rollups(
+            data,
+            v => d3.sum(v, d => d.sales),
+            d => d.store
+        );
+
+        // Ordenar por ventas totales y tomar top 5
+        const top5Tiendas = ventasPorTienda
+            .sort((a, b) => d3.descending(a[1], b[1]))
+            .slice(0, 5)
+            .map(d => d[0]);
+
+        // Filtrar solo datos de las tiendas top
+        const datosFiltrados = data.filter(d => top5Tiendas.includes(d.store));
+
+        const color = d3.scaleOrdinal()
+            .domain(datosFiltrados.map(d => d.store))
+            .range(d3.schemeCategory10);
+
+        // Agrupar por tienda para graficar
+        const series = d3.groups(datosFiltrados, d => d.store);
+
+        // Escalas
+        // const x = d3.scaleUtc()
+        //     .domain(d3.extent(datosFiltrados, d => d.date))
+        //     .range([margin.left, width - margin.right]);
+
+        const x = d3.scaleUtc()
+            .domain([datosFiltrados[0].date, datosFiltrados[datosFiltrados.length - 1].date])
+            .range([margin.left, width - margin.right]);
+
+
+        const y = d3.scaleLinear()
+            .domain([0, d3.max(series, ([, values]) => d3.max(values, d => d.sales))])
+            .nice()
+            .range([height, 0]);
+
+        // Ejes
+        g.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x));
+
+        g.append("g")
+            .call(d3.axisLeft(y).ticks(height / 25))
+            .call(g => g.select(".domain").remove())
+            .call(g => g.selectAll(".tick line").clone()
+                .attr("x2", width)
+                .attr("stroke-opacity", 0.1))
+            .call(g => g.append("text")
+                .attr("x", -(margin.left - 20))
+                .attr("y", -width - margin.left - margin.right)
+                .attr("fill", "currentColor")
+                .attr("text-anchor", "start")
+                .text("Ventas ($)"));
+
+        // Compute the points in pixel space as [x, y, z], where z is the name of the series.
+        const points = datosFiltrados.map((d) => [x(d.date), y(d.sales), d.store]);
+
+        // Group the points by series.
+        const groups = d3.rollup(points, v => Object.assign(v, { z: v[0][2] }), d => d[2]);
+
+
+        const line = d3.line();
+
+        const path = svg.append("g")
+            .attr("fill", "none")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-linejoin", "round")
+            .attr("stroke-linecap", "round")
+            .selectAll("path")
+            .data(groups.values())
+            .join("path")
+            .style("mix-blend-mode", "multiply")
+            .attr("stroke", d => color(d[0][2]))
+            .attr("d", line);
+
+
+        // Add an invisible layer for the interactive tip.
+        const dot = svg.append("g")
+            .attr("display", "none");
+
+        dot.append("circle")
+            .attr("r", 2.5);
+
+        dot.append("text")
+            .attr("text-anchor", "middle")
+            .attr("y", -8);
+
+        svg
+            .on("pointerenter", () => {
+                path.style("mix-blend-mode", null).style("stroke", "#ddd");
+                dot.attr("display", null);
+            })
+            .on("pointermove", (event) => {
+                const [xm, ym] = d3.pointer(event);
+                const i = d3.leastIndex(points, ([x, y]) => Math.hypot(x - xm, y - ym));
+                const [x, y, k] = points[i];
+                path.style("stroke", ({ z }) => z === k ? null : "#ddd").filter(({ z }) => z === k).raise();
+                dot.attr("transform", `translate(${x},${y})`);
+                dot.select("text").text(`${k}: ($) ${datosFiltrados[i].sales} - Fecha: ${formatearFecha(datosFiltrados[i].date)}`);
+                svg.property("value", datosFiltrados[i]).dispatch("input", { bubbles: true });
+            })
+            .on("pointerleave", () => {
+                path.style("mix-blend-mode", "multiply").style("stroke", null);
+                dot.attr("display", "none");
+                svg.node().value = null;
+                svg.dispatch("input", { bubbles: true });
+            })
+            .on("touchstart", event => event.preventDefault());
+
+        series.forEach(([store, values], i) => {
+            let colorSpecify = color(store);
+
+
+
+            // Leyenda
+            svg.append("text")
+                .attr("class", "legend")
+                .attr("x", width + margin.left + 20)
+                .attr("y", margin.top + i * 30)
+                .attr("fill", colorSpecify)
+                .text(store);
+        });
+
+
+    });
+
+}
+
+function formatearFecha(fecha) {
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0'); // Los meses empiezan en 0
+    const anio = fecha.getFullYear();
+    return `${dia}-${mes}-${anio}`;
+}
+
+cargarDatos();
