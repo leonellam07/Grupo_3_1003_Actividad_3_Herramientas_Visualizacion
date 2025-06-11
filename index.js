@@ -44,6 +44,7 @@ async function cargarDatos() {
                             <td>${sale.Store}</td>
                             <td>${sale.Date}</td>
                             <td>${sale.Weekly_Sales?.toLocaleString() ?? 'N/A'}</td>
+                            <td>${sale.Holiday_Flag?.toLocaleString() ?? 'N/A'}</td>
                             <td>${sale.Temperature?.toLocaleString() ?? 'N/A'}</td>
                             <td>${sale.Fuel_Price?.toLocaleString() ?? 'N/A'}</td>
                             <td>${sale.CPI?.toLocaleString() ?? 'N/A'}</td>
@@ -61,16 +62,15 @@ async function cargarDatos() {
                 }
             });
 
-
-
-            dibujarGraficoVentas(datos);
+            dibujarGraficoVentas();
+            dibujarGraficoVentasDiasFestivos();
 
         })
         .catch(error => console.error('Error al cargar el CSV:', error));
 }
 
 
-function dibujarGraficoVentas(datos) {
+function dibujarGraficoVentas() {
     const margin = { top: 20, right: 20, bottom: 30, left: 70 };
     const width = 1600 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
@@ -117,10 +117,6 @@ function dibujarGraficoVentas(datos) {
         const series = d3.groups(datosFiltrados, d => d.store);
 
         // Escalas
-        // const x = d3.scaleUtc()
-        //     .domain(d3.extent(datosFiltrados, d => d.date))
-        //     .range([margin.left, width - margin.right]);
-
         const x = d3.scaleUtc()
             .domain([datosFiltrados[0].date, datosFiltrados[datosFiltrados.length - 1].date])
             .range([margin.left, width - margin.right]);
@@ -207,8 +203,6 @@ function dibujarGraficoVentas(datos) {
         series.forEach(([store, values], i) => {
             let colorSpecify = color(store);
 
-
-
             // Leyenda
             svg.append("text")
                 .attr("class", "legend")
@@ -222,6 +216,134 @@ function dibujarGraficoVentas(datos) {
     });
 
 }
+
+function dibujarGraficoVentasDiasFestivos() {
+    const margin = { top: 20, right: 20, bottom: 30, left: 70 };
+    const width = 1600 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
+
+    const svg = d3.select("#grafico-dias-festivos")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    d3.csv(apiUrl).then(data => {
+        // Parsear fechas y campos necesarios
+        data.forEach(d => {
+            const fecha = d.Date;
+            const anio = fecha.slice(6);
+            const mes = fecha.slice(3, 5);
+
+            d.date = d3.timeParse("%d-%m-%Y")(d.Date);
+            d.sales = +d.Weekly_Sales;
+            d.store = `Tienda ${d.Store}`;
+            d.periodo = `${anio}-${mes}`;
+            d.holiday = d.Holiday_Flag === "1" ? "Festivo" : "No Festivo";
+        });
+
+        // Agrupar por periodo (mes) y si es festivo o no
+        const ventasAgrupadas = d3.rollups(
+            data,
+            v => d3.sum(v, d => d.sales),
+            d => d.periodo,
+            d => d.holiday
+        );
+
+        // Convertir a estructura adecuada para stack()
+        const datosPorMes = Array.from(ventasAgrupadas, ([periodo, valores]) => {
+            const entrada = { periodo, "Festivo": 0, "No Festivo": 0 };
+            valores.forEach(([holiday, ventas]) => {
+                entrada[holiday] = ventas;
+            });
+            return entrada;
+        });
+
+        const keys = ["Festivo", "No Festivo"];
+
+        // Stack layout
+        const series = d3.stack()
+            .keys(keys)
+            (datosPorMes);
+
+        // Escalas
+        const x = d3.scaleBand()
+            .domain(datosPorMes.map(d => d.periodo))
+            .range([margin.left, width - margin.right])
+            .padding(0.1);
+
+        const y = d3.scaleLinear()
+            .domain([0, d3.max(series, d => d3.max(d, d => d[1]))])
+            .nice()
+            .range([height - margin.bottom, margin.top]);
+
+        const color = d3.scaleOrdinal()
+            .domain(keys)
+            .range(["#fca311", "#14213d"]); // colores para festivo / no festivo
+
+        // Dibujar barras apiladas
+        svg.append("g")
+            .selectAll("g")
+            .data(series)
+            .join("g")
+            .attr("fill", d => color(d.key))
+            .selectAll("rect")
+            .data(d => d)
+            .join("rect")
+            .attr("x", d => x(d.data.periodo))
+            .attr("y", d => y(d[1]))
+            .attr("height", d => y(d[0]) - y(d[1]))
+            .attr("width", x.bandwidth())
+            .append("title")
+            .text(d => `Festivo: $ ${(d.data["Festivo"]  || 0).toFixed(2)} \n No Festivo: $ ${(d.data["No Festivo"]  || 0).toFixed(2)}`);
+          
+
+
+        // Eje X
+        svg.append("g")
+            .attr("transform", `translate(0,${height - margin.bottom})`)
+            .call(d3.axisBottom(x).tickSizeOuter(0))
+            .selectAll("text")
+            .attr("transform", "rotate(-45)")
+            .style("text-anchor", "end");
+
+        // Eje Y
+        svg.append("g")
+            .attr("transform", `translate(${margin.left},0)`)
+            .call(d3.axisLeft(y).ticks(10).tickFormat(d3.format("$.2s")))
+            .call(g => g.selectAll(".domain").remove());
+
+        // Leyenda
+        const legend = svg.append("g")
+            .attr("transform", `translate(${width - 150},${margin.top})`);
+
+        keys.forEach((key, i) => {
+            const g = legend.append("g").attr("transform", `translate(0, ${i * 20})`);
+            g.append("rect")
+                .attr("width", 15)
+                .attr("height", 15)
+                .attr("fill", color(key));
+            g.append("text")
+                .attr("x", 20)
+                .attr("y", 12)
+                .text(key)
+                .attr("fill", "#000");
+
+        });
+
+        series.forEach(([serie, values], i) => {
+            let colorSpecify = color(serie);
+
+            // Leyenda
+            svg.append("text")
+                .attr("class", "legend")
+                .attr("x", width + margin.left + 20)
+                .attr("y", margin.top + i * 30)
+                .attr("fill", colorSpecify)
+                .text(serie.key);
+        });
+    });
+}
+
 
 function formatearFecha(fecha) {
     const dia = String(fecha.getDate()).padStart(2, '0');

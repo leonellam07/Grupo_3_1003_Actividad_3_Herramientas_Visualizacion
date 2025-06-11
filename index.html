@@ -52,18 +52,25 @@
             <small style="font-size: 20px;">Datos de 2010-2012</small>
         </h1>
 
-        <!-- Gráfico -->
-        <div class="row">
-            <div class="col-md-12">
-                <div id="grafico-ventas"></div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-12" style="display: block; width: 100%;">
-                <h5 style="display: block; width: 100%; text-align: center;">Top 5 Tiendas con mejores Ventas</h5>
-            </div>
-        </div>
 
+        <div class="row">
+            <div class="col-md-12" style="padding-left: 50px; padding-right: 50px; margin-bottom: 50px;">
+                <small>
+                    El siguiente analisis es datos de ventas de diferentes tiendas de Walmart con el objetivo de buscar
+                    las mejores ventas de las tiendas
+                    y buscar las mejores epocas para las ventas.
+                    Para tal analisis se usa la libreria D3.js con los cuales se generan los graficos del siguiente
+                    dashboard, se empleara la siguiente fuente de datos:
+                    <a href="https://www.kaggle.com/datasets/mikhail1681/walmart-sales/data">https://www.kaggle.com/datasets/mikhail1681/walmart-sales/data
+                    </a>
+                    </br>
+                    Adicionalmente si se require validar el codigo fuente pueden conseguirlo en el siguiente enlace:
+                    <a href="https://github.com/leonellam07/Grupo_3_1003_Actividad_3_Herramientas_Visualizacion">https://github.com/leonellam07/Grupo_3_1003_Actividad_3_Herramientas_Visualizacion
+                    </a>
+                </small>
+            </div>
+        </div>
+        <h5 style="display: block; width: 100%; text-align: center;">Muestra de Datos</h5>
         <!-- Tabla -->
         <div class="table-responsive mb-5">
             <table id="tabla-sales" class="table table-striped table-bordered table-hover">
@@ -72,6 +79,7 @@
                         <th>Tienda</th>
                         <th>Fecha</th>
                         <th>Ventas</th>
+                        <th>Días Festivos</th>
                         <th>Temperaturas</th>
                         <th>Precio de Gasolina</th>
                         <th>CPI</th>
@@ -81,6 +89,24 @@
                 <tbody></tbody>
             </table>
         </div>
+
+
+        <!-- Gráfico -->
+        <div class="row" style="margin-bottom: 100px;">
+            <div class="col-md-12">
+                <h5 style="display: block; width: 100%; text-align: center;">Top 5 Tiendas con Mejores Ventas</h5>
+                <div id="grafico-ventas"></div>
+            </div>
+        </div>
+
+        <div class="row" style="margin-bottom: 100px;">
+            <div class="col-md-12">
+                <h5 style="display: block; width: 100%; text-align: center;">Volumen Ventas en Días Festivos y No
+                    Festivos</h5>
+                <div id="grafico-dias-festivos"></div>
+            </div>
+        </div>
+
 
     </div>
 </body>
