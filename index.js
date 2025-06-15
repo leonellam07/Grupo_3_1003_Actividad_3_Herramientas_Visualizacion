@@ -295,8 +295,8 @@ function dibujarGraficoVentasDiasFestivos() {
             .attr("height", d => y(d[0]) - y(d[1]))
             .attr("width", x.bandwidth())
             .append("title")
-            .text(d => `Festivo: $ ${(d.data["Festivo"]  || 0).toFixed(2)} \n No Festivo: $ ${(d.data["No Festivo"]  || 0).toFixed(2)}`);
-          
+            .text(d => `Festivo: $ ${(d.data["Festivo"] || 0).toFixed(2)} \n No Festivo: $ ${(d.data["No Festivo"] || 0).toFixed(2)}`);
+
 
 
         // Eje X
@@ -346,33 +346,35 @@ function dibujarGraficoVentasDiasFestivos() {
 }
 
 function dibujarTreemapTop20() {
-    const width = 1600;
-    const height = 700;
+    const width = 800;
+    const height = 300;
+    const legendHeight = 60;
 
     const svg = d3.select("#grafico-treemap")
         .append("svg")
+        .attr("viewBox", [0, 0, width, height + legendHeight])
         .attr("width", width)
-        .attr("height", height);
+        .attr("height", height + legendHeight)
+        .attr("style", "max-width: 100%; height: auto; font: 10px sans-serif;");
 
     d3.csv(apiUrl).then(data => {
-        // Procesar datos
         data.forEach(d => {
             d.sales = +d.Weekly_Sales;
             d.store = `Tienda ${d.Store}`;
         });
 
-        // Agrupar y sumar ventas
         const ventasPorTienda = Array.from(
             d3.rollup(data, v => d3.sum(v, d => d.sales), d => d.store),
             ([store, total]) => ({ name: store, value: total })
         );
 
-        // Top 20 tiendas
         const top20 = ventasPorTienda
             .sort((a, b) => d3.descending(a.value, b.value))
             .slice(0, 20);
 
-        // Crear jerarquía
+        const maxVal = d3.max(top20, d => d.value);
+        const minVal = d3.min(top20, d => d.value);
+
         const root = d3.hierarchy({ children: top20 })
             .sum(d => d.value)
             .sort((a, b) => b.value - a.value);
@@ -381,10 +383,9 @@ function dibujarTreemapTop20() {
             .size([width, height])
             .padding(2)(root);
 
-        // Escala de color (de rojo claro a rojo oscuro)
         const color = d3.scaleSequential()
-            .domain([0, d3.max(top20, d => d.value)])
-            .interpolator(d3.interpolateBlues); // o interpolateBlues, interpolateViridis, etc.
+            .domain([minVal, maxVal])
+            .interpolator(d3.interpolateBlues);
 
         const nodes = svg.selectAll("g")
             .data(root.leaves())
@@ -396,15 +397,60 @@ function dibujarTreemapTop20() {
             .attr("height", d => d.y1 - d.y0)
             .attr("fill", d => color(d.data.value))
             .append("title")
-            .text(d => `${d.data.name}: $${d.data.value.toFixed(2)}`);
+            .text(d => `${d.data.name}\n Ventas: $${d.data.value.toFixed(2)}`);
 
         nodes.append("text")
             .attr("x", 4)
             .attr("y", 14)
-            .text(d => d.data.name)
-            .style("font-size", "12px")
-            .style("fill", "black")
+            .text(d => `${d.data.name}\n Ventas: $${d.data.value.toFixed(2)}`)
+            .style("font-size", "5px")
+            // .style("fill", "white")
             .style("pointer-events", "none");
+
+        // Leyenda de color
+        const legendWidth = 300;
+        const legendX = d3.scaleLinear()
+            .domain([minVal, maxVal])
+            .range([0, legendWidth]);
+
+        const legendAxis = d3.axisBottom(legendX)
+            .ticks(5)
+            .tickFormat(d => `$${Math.round(d / 1e6)}M`);
+
+        const defs = svg.append("defs");
+        const gradientId = "legend-gradient";
+
+        const gradient = defs.append("linearGradient")
+            .attr("id", gradientId)
+            .attr("x1", "0%").attr("x2", "100%")
+            .attr("y1", "0%").attr("y2", "0%");
+
+        for (let i = 0; i <= 100; i++) {
+            gradient.append("stop")
+                .attr("offset", `${i}%`)
+                .attr("stop-color", color(minVal + i / 100 * (maxVal - minVal)));
+        }
+
+        svg.append("g")
+            .attr("transform", `translate(${(width - legendWidth) / 2}, ${height + 10})`)
+            .append("rect")
+            .attr("width", legendWidth)
+            .attr("height", 12)
+            .style("fill", `url(#${gradientId})`);
+
+        svg.append("g")
+            .style("font-size", "8px")
+            .attr("transform", `translate(${(width - legendWidth) / 2}, ${height + 22})`)
+            .call(legendAxis)
+            .select(".domain").remove();
+
+        svg.append("text")
+            .attr("x", width / 2)
+            .attr("y", height + 50)
+            .attr("text-anchor", "middle")
+            .style("font-size", "8px")
+            .style("fill", "gray")
+            .text("Total de Ventas (escala de color)");
     });
 }
 
