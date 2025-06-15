@@ -64,6 +64,7 @@ async function cargarDatos() {
 
             dibujarGraficoVentas();
             dibujarGraficoVentasDiasFestivos();
+            dibujarTreemapTop20(); // Reemplaza con `apiUrl` correcto
 
         })
         .catch(error => console.error('Error al cargar el CSV:', error));
@@ -344,6 +345,69 @@ function dibujarGraficoVentasDiasFestivos() {
     });
 }
 
+function dibujarTreemapTop20() {
+    const width = 1600;
+    const height = 700;
+
+    const svg = d3.select("#grafico-treemap")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    d3.csv(apiUrl).then(data => {
+        // Procesar datos
+        data.forEach(d => {
+            d.sales = +d.Weekly_Sales;
+            d.store = `Tienda ${d.Store}`;
+        });
+
+        // Agrupar y sumar ventas
+        const ventasPorTienda = Array.from(
+            d3.rollup(data, v => d3.sum(v, d => d.sales), d => d.store),
+            ([store, total]) => ({ name: store, value: total })
+        );
+
+        // Top 20 tiendas
+        const top20 = ventasPorTienda
+            .sort((a, b) => d3.descending(a.value, b.value))
+            .slice(0, 20);
+
+        // Crear jerarquía
+        const root = d3.hierarchy({ children: top20 })
+            .sum(d => d.value)
+            .sort((a, b) => b.value - a.value);
+
+        d3.treemap()
+            .size([width, height])
+            .padding(2)(root);
+
+        // Escala de color (de rojo claro a rojo oscuro)
+        const color = d3.scaleSequential()
+            .domain([0, d3.max(top20, d => d.value)])
+            .interpolator(d3.interpolateBlues); // o interpolateBlues, interpolateViridis, etc.
+
+        const nodes = svg.selectAll("g")
+            .data(root.leaves())
+            .enter().append("g")
+            .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+        nodes.append("rect")
+            .attr("width", d => d.x1 - d.x0)
+            .attr("height", d => d.y1 - d.y0)
+            .attr("fill", d => color(d.data.value))
+            .append("title")
+            .text(d => `${d.data.name}: $${d.data.value.toFixed(2)}`);
+
+        nodes.append("text")
+            .attr("x", 4)
+            .attr("y", 14)
+            .text(d => d.data.name)
+            .style("font-size", "12px")
+            .style("fill", "black")
+            .style("pointer-events", "none");
+    });
+}
+
 
 function formatearFecha(fecha) {
     const dia = String(fecha.getDate()).padStart(2, '0');
@@ -351,5 +415,8 @@ function formatearFecha(fecha) {
     const anio = fecha.getFullYear();
     return `${dia}-${mes}-${anio}`;
 }
+
+
+
 
 cargarDatos();
